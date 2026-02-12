@@ -845,6 +845,15 @@ async def d_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- MAIN TELEGRAM APPLICATION AND HANDLERS (same as original) ---
 app = Application.builder().token(TOKEN).build()
 
+# --- newly added function ---
+# Fix: Application Initialization for python-telegram-bot v20+ and Flask webhooks ---
+import asyncio
+async def initialize_app():
+    await app.initialize()
+asyncio.run(initialize_app())
+
+# newly added function-----
+
 # Intake
 p_conv = ConversationHandler(
     entry_points=[CallbackQueryHandler(p_start, pattern='^p_start$')],
