@@ -6,21 +6,21 @@ from reportlab.lib.utils import ImageReader
 from telegram import (InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyKeyboardRemove)
 from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
                           MessageHandler, filters, ContextTypes, ConversationHandler)
+from flask import Flask, request, Response
+import asyncio
 
 # --- CONFIGURATION ---
-import os
 TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "123456789"))  # fallback to dummy
 LOGO_PATH = os.environ.get("LOGO_PATH", "logo.webp")
-
-print("DEBUG - TOKEN is:", repr(TOKEN))
+# print("DEBUG - TOKEN is:", repr(TOKEN))  # REMOVE FOR SECURITY
 
 # --- CONVERSATION STATES ---
 (P_TERMS, P_NAME, P_ADDR, P_AGE, P_PHONE, P_EDD, P_W_BEFORE, P_W_NOW,
  P_BIRTH, P_GENDER, P_DIET, P_RISK, P_ALLERGY, P_BREASTFEED, P_LANG_PREF, P_NOTES,
  P_HOME, P_PACKAGE, P_ID) = range(10, 29)
-
 (D_NAME, D_GENDER, D_ADDR, D_PHONE, D_CONTACT, D_PKG, D_DATE, D_HOUSE, D_PAYMENT, D_NOTES) = range(40, 50)
+
 
 # --- CONTENT ---
 CONTENT = {
@@ -409,35 +409,26 @@ Article Eight: Settlement of Disputes
 Any dispute arising out of or in connection with this agreement shall be amicably settled by the two parties through negotiation. If the case is not settled amicably through negotiation, the dispute shall be settled by Ethiopian regular federal competent court.
 """
 
-    # --- PDF GENERATOR WITH LOGO ---
-
+# --- PDF GENERATOR WITH LOGO ---
 def create_intake_pdf(data):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
-
     # Add Logo if it exists
     y_start = height - 50
     if os.path.exists(LOGO_PATH):
         try:
             logo = ImageReader(LOGO_PATH)
-            # Draws logo at top right, scaled to 60x60
             c.drawImage(logo, 480, height - 80, width=60, height=60, mask='auto')
         except Exception:
             pass # Skip if image is corrupted
-
-
-    # Header
     c.setFont("Helvetica-Bold", 18)
     c.drawString(50, height - 50, "Agos Postpartum Care")
     c.setFont("Helvetica", 12)
     c.drawString(50, height - 70, "Official Intake Confirmation Form")
     c.line(50, height - 85, 550, height - 85)
-
-    # Content
     c.setFont("Helvetica", 11)
     y_position = height - 120
-
     for key, value in data.items():
         if key.startswith('p_') and key not in ['history', 'p_id_file']:
             label = key[2:].replace('_', ' ').upper()
@@ -447,14 +438,13 @@ def create_intake_pdf(data):
             if y_position < 60:
                 c.showPage()
                 y_position = height - 50
-
     c.setFont("Helvetica-Oblique", 9)
     c.drawString(50, 40, "Generated via Agos Telegram Bot. Verified submission.")
     c.save()
     buffer.seek(0)
     return buffer
 
-# --- HELPERS ---
+# --- HELPERS, UI, NAVIGATION (copied exact) ---
 async def send_terms(update, text, keyboard):
     chunks = [text[i:i+3800] for i in range(0, len(text), 3800)]
     target = update.callback_query.message if update.callback_query else update.message
@@ -485,10 +475,16 @@ def get_amharic_label(key):
         'p_lang': 'ቋንቋ',
         'p_notes': 'ተጨማሪ ማስታወሻ',
         'p_home': 'የቤት አይነት',
-        'p_pkg': 'ፓኬጅ'
+        'p_pkg': 'ፓኬጅ'        
     }
     return labels.get(f'p_{key}', key)
 
+# --- ALL YOUR HANDLERS AND FLOW FUNCTIONS (copied exactly) ---
+# start, show_menu, info_pages, p_start, p_back_handler, p_q1 ... p_q18, d_start, d_step1 ...
+# p_final, d_final -- all other handlers --
+# Just copy all your existing handler functions here with NO changes
+
+# - For brevity, this block is omitted here, but you must paste all of your previous handler functions as they are.
 # --- NAVIGATION ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -846,66 +842,83 @@ async def d_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     return ConversationHandler.END
 
-# --- APP RUNNER ---
+# --- MAIN TELEGRAM APPLICATION AND HANDLERS (same as original) ---
+app = Application.builder().token(TOKEN).build()
 
-if __name__ == '__main__':
-    app = Application.builder().token(TOKEN).build()
+# Intake
+p_conv = ConversationHandler(
+    entry_points=[CallbackQueryHandler(p_start, pattern='^p_start$')],
+    states={
+        P_TERMS: [CallbackQueryHandler(p_q1, pattern='^p_agree$')],
+        P_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q2), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_ADDR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q3), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q4), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q5), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_EDD: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q6), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_W_BEFORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q7), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_W_NOW: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q8), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_BIRTH: [CallbackQueryHandler(p_q9), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_GENDER: [CallbackQueryHandler(p_q10), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_DIET: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q11), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_RISK: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q12), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_ALLERGY: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q13), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_BREASTFEED: [CallbackQueryHandler(p_q14), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_LANG_PREF: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q15), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_NOTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q16), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_HOME: [CallbackQueryHandler(p_q17), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_PACKAGE: [CallbackQueryHandler(p_q18), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
+        P_ID: [MessageHandler(filters.PHOTO, p_final), CallbackQueryHandler(p_back_handler, pattern='^p_back$')]
+    },
+    fallbacks=[CommandHandler("start", start), CallbackQueryHandler(show_menu, pattern='^menu$'), CallbackQueryHandler(start, pattern='^restart$')],
+    allow_reentry=True
+)
 
-    p_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(p_start, pattern='^p_start$')],
-        states={
-            P_TERMS: [CallbackQueryHandler(p_q1, pattern='^p_agree$')],
-            P_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q2), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_ADDR: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q3), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q4), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q5), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_EDD: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q6), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_W_BEFORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q7), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_W_NOW: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q8), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_BIRTH: [CallbackQueryHandler(p_q9), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_GENDER: [CallbackQueryHandler(p_q10), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_DIET: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q11), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_RISK: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q12), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_ALLERGY: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q13), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_BREASTFEED: [CallbackQueryHandler(p_q14), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_LANG_PREF: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q15), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_NOTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, p_q16), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_HOME: [CallbackQueryHandler(p_q17), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_PACKAGE: [CallbackQueryHandler(p_q18), CallbackQueryHandler(p_back_handler, pattern='^p_back$')],
-            P_ID: [MessageHandler(filters.PHOTO, p_final), CallbackQueryHandler(p_back_handler, pattern='^p_back$')]
-        },
-        fallbacks=[CommandHandler("start", start), CallbackQueryHandler(show_menu, pattern='^menu$'), CallbackQueryHandler(start, pattern='^restart$')],
-        allow_reentry=True
-    )
+# Decor
+d_conv = ConversationHandler(
+    entry_points=[CallbackQueryHandler(d_start, pattern='^d_start$')],
+    states={
+        D_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step1)],
+        D_GENDER: [CallbackQueryHandler(d_step2)],
+        D_ADDR: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step3)],
+        D_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step4)],
+        D_CONTACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step5)],
+        D_PKG: [CallbackQueryHandler(d_step6)],
+        D_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step7)],
+        D_HOUSE: [CallbackQueryHandler(d_step8)],
+        D_NOTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step9)],
+        D_PAYMENT: [MessageHandler(filters.PHOTO, d_final)]
+    },
+    fallbacks=[CommandHandler("start", start), CallbackQueryHandler(show_menu, pattern='^menu$'), CallbackQueryHandler(start, pattern='^restart$')],
+    allow_reentry=True
+)
 
-    d_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(d_start, pattern='^d_start$')],
-        states={
-            D_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step1)],
-            D_GENDER: [CallbackQueryHandler(d_step2)],
-            D_ADDR: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step3)],
-            D_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step4)],
-            D_CONTACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step5)],
-            D_PKG: [CallbackQueryHandler(d_step6)],
-            D_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step7)],
-            D_HOUSE: [CallbackQueryHandler(d_step8)],
-            D_NOTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step9)],
-            D_PAYMENT: [MessageHandler(filters.PHOTO, d_final)]
-        },
-        fallbacks=[CommandHandler("start", start), CallbackQueryHandler(show_menu, pattern='^menu$'), CallbackQueryHandler(start, pattern='^restart$')],
-        allow_reentry=True
-    )
+# Register handlers
+app.add_handler(p_conv)
+app.add_handler(d_conv)
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CallbackQueryHandler(lambda u, c: show_menu(u, c, u.callback_query.data.split('_')[1]), pattern='^lang_'))
+app.add_handler(CallbackQueryHandler(lambda u, c: show_menu(u, c), pattern='^menu$'))
+app.add_handler(CallbackQueryHandler(info_pages, pattern='^info_'))
+app.add_handler(CallbackQueryHandler(start, pattern='^restart$'))
 
-    app.add_handler(p_conv)
-    app.add_handler(d_conv)
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(lambda u, c: show_menu(u, c, u.callback_query.data.split('_')[1]), pattern='^lang_'))
-    app.add_handler(CallbackQueryHandler(lambda u, c: show_menu(u, c), pattern='^menu$'))
-    app.add_handler(CallbackQueryHandler(info_pages, pattern='^info_'))
-    app.add_handler(CallbackQueryHandler(start, pattern='^restart$'))
+# --- WEBHOOK FOR FLASK (Use this for deployment) ---
+flask_app = Flask(__name__)
 
-    print("Agos Bot is live...")
-    app.run_polling()
+@flask_app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    if request.method == "POST":
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        try:
+            update = Update.de_json(request.get_json(force=True), app.bot)
+            asyncio.get_event_loop().run_until_complete(app.process_update(update))
+        except Exception as e:
+            print(f"Error: {e}")
+        return Response("ok", status=200)
 
+@flask_app.route("/")
+def home():
+    return "Agos Postpartum Care Bot running (webhook mode)."
 
-
+if __name__ == "__main__":
+    # For local debugging, you can use Flask default port or production env port
+    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8443)))
