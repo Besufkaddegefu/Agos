@@ -580,6 +580,7 @@ async def p_q2(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         context.user_data['p_name'] = update.message.text
         context.user_data['history'].append(P_NAME)
+        print(f"✅ Received name: {update.message.text}")  # Add this debug line
     await (update.message or update.callback_query.message).reply_text(
         "2. Address / አድራሻ:", reply_markup=get_nav_kb(lang))
     return P_ADDR
@@ -1012,11 +1013,17 @@ async def d_back_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- MAIN TELEGRAM APPLICATION AND HANDLERS ---
 app = Application.builder().token(TOKEN).build()
 
-# Initialize the app for webhook mode
+# Initialize the app for webhook mode - FIXED VERSION
 async def initialize_app():
-    await app.initialize()  # Only initialize, no start
+    await app.initialize()
+    await app.start()  # ADD THIS BACK - it's needed for conversation handlers!
 
-asyncio.run(initialize_app())
+try:
+    asyncio.run(initialize_app())
+    print("✅ Bot initialized successfully")
+except Exception as e:
+    print(f"❌ Failed to initialize bot: {e}")
+  
 
 # Conversation Handlers
 p_conv = ConversationHandler(
