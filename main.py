@@ -467,13 +467,27 @@ def create_intake_pdf(data):
 
 # --- HELPERS ---
 async def send_terms(update, text, keyboard):
-    chunks = [text[i:i+3800] for i in range(0, len(text), 3800)]
+    chunks = [text[i:i+3500] for i in range(0, len(text), 3500)]
     target = update.callback_query.message if update.callback_query else update.message
+    
     for i, chunk in enumerate(chunks):
-        if i == len(chunks) - 1:
-            await target.reply_text(chunk, reply_markup=keyboard, parse_mode='Markdown')
-        else:
-            await target.reply_text(chunk, parse_mode='Markdown')
+        try:
+            if i == 0:
+                # First chunk with keyboard
+                await target.reply_text(
+                    chunk + ("..." if len(chunks) > 1 else ""), 
+                    reply_markup=keyboard if i == len(chunks)-1 else None, 
+                    parse_mode='Markdown'
+                )
+            else:
+                # Subsequent chunks without keyboard
+                await target.reply_text(
+                    chunk + ("..." if i < len(chunks)-1 else ""), 
+                    parse_mode='Markdown'
+                )
+        except Exception as e:
+            # If Markdown fails, send without formatting
+            await target.reply_text(chunk.replace('*', '').replace('_', ''))
 
 def get_back_kb(lang):
     return InlineKeyboardMarkup([[InlineKeyboardButton(CONTENT[lang]['q_back'], callback_data='p_back')]])
@@ -542,9 +556,14 @@ async def info_pages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.edit_text(text, reply_markup=back_btn, parse_mode='Markdown')
 
 # --- INTAKE FLOW ---
+
 async def p_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Preserve language but clear other data
     lang = context.user_data.get('lang', 'en')
+    context.user_data.clear()
+    context.user_data['lang'] = lang
     context.user_data['history'] = []
+    
     kb = [
         [InlineKeyboardButton(CONTENT[lang]['agree_btn'], callback_data='p_agree')],
         [InlineKeyboardButton(CONTENT[lang]['back'], callback_data='menu')]
@@ -556,13 +575,30 @@ async def p_back_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     history = context.user_data.get('history', [])
-    if not history: return await start(update, context)
+    if not history: 
+        return await start(update, context)
+    
     last_state = history.pop()
     state_to_func = {
-        P_NAME: p_q1, P_ADDR: p_q2, P_AGE: p_q3, P_PHONE: p_q4, P_EDD: p_q5,
-        P_W_BEFORE: p_q6, P_W_NOW: p_q7, P_BIRTH: p_q8, P_GENDER: p_q9,
-        P_DIET: p_q10, P_RISK: p_q11, P_ALLERGY: p_q12, P_BREASTFEED: p_q13,
-        P_LANG_PREF: p_q14, P_NOTES: p_q15, P_HOME: p_q16, P_PACKAGE: p_q17, P_ID: p_q18
+        P_TERMS: p_start,  # Added this line
+        P_NAME: p_q1, 
+        P_ADDR: p_q2, 
+        P_AGE: p_q3, 
+        P_PHONE: p_q4, 
+        P_EDD: p_q5,
+        P_W_BEFORE: p_q6, 
+        P_W_NOW: p_q7, 
+        P_BIRTH: p_q8, 
+        P_GENDER: p_q9,
+        P_DIET: p_q10, 
+        P_RISK: p_q11, 
+        P_ALLERGY: p_q12, 
+        P_BREASTFEED: p_q13,
+        P_LANG_PREF: p_q14, 
+        P_NOTES: p_q15, 
+        P_HOME: p_q16, 
+        P_PACKAGE: p_q17, 
+        P_ID: p_q18
     }
     return await state_to_func[last_state](update, context)
 
@@ -827,7 +863,11 @@ async def p_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- DECOR FLOW ---
 async def d_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    # Preserve language but clear other data
     lang = context.user_data.get('lang', 'en')
+    context.user_data.clear()
+    context.user_data['lang'] = lang
+    
     await query.answer()
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton(CONTENT[lang]['back'], callback_data='menu')]
@@ -1058,14 +1098,14 @@ d_conv = ConversationHandler(
     states={
         D_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step1)],
         D_GENDER: [CallbackQueryHandler(d_step2)],
-        D_ADDR: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step3)],
-        D_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step4)],
-        D_CONTACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step5)],
-        D_PKG: [CallbackQueryHandler(d_step6)],
-        D_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step7)],
-        D_HOUSE: [CallbackQueryHandler(d_step8)],
-        D_NOTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step9)],
-        D_PAYMENT: [MessageHandler(filters.PHOTO, d_final)]
+        D_ADDR: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step3), CallbackQueryHandler(d_back_handler, pattern='^d_back$')],
+        D_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step4), CallbackQueryHandler(d_back_handler, pattern='^d_back$')],
+        D_CONTACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step5), CallbackQueryHandler(d_back_handler, pattern='^d_back$')],
+        D_PKG: [CallbackQueryHandler(d_step6), CallbackQueryHandler(d_back_handler, pattern='^d_back$')],
+        D_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step7), CallbackQueryHandler(d_back_handler, pattern='^d_back$')],
+        D_HOUSE: [CallbackQueryHandler(d_step8), CallbackQueryHandler(d_back_handler, pattern='^d_back$')],
+        D_NOTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, d_step9), CallbackQueryHandler(d_back_handler, pattern='^d_back$')],
+        D_PAYMENT: [MessageHandler(filters.PHOTO, d_final), CallbackQueryHandler(d_back_handler, pattern='^d_back$')]
     },
     fallbacks=[CommandHandler("start", start), CallbackQueryHandler(show_menu, pattern='^menu$'), CallbackQueryHandler(start, pattern='^restart$')],
     allow_reentry=True
