@@ -1014,8 +1014,7 @@ app = Application.builder().token(TOKEN).build()
 
 # Initialize the app for webhook mode
 async def initialize_app():
-    await app.initialize()
-    await app.start()
+    await app.initialize()  # Only initialize, no start
 
 asyncio.run(initialize_app())
 
